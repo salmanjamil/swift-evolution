@@ -35,7 +35,7 @@ extension LazyMapCollection {
 
 The implementation of `compactMap(_:)` can still return an instance of `LazyCompactMapCollection`, but now `LazyCompactMapCollection` can be private: its identity is hidden from clients, and could change from one version of the library to the next without breaking those clients, because the actual type identity was never exposed. This allows us to provide potentially-more-efficient implementations without expanding the surface area of the library.
 
-Swift-evolution thread: [Discussion thread topic for that proposal](https://lists.swift.org/pipermail/swift-evolution/)
+Swift-evolution thread: [Opaque result types](https://forums.swift.org/t/opaque-result-types/15645)
 
 ## Motivation
 
