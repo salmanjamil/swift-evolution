@@ -79,7 +79,7 @@ An opaque result type is not considered equivalent to its underlying type by the
 
 ```swift
 var intArray = [Int]()
-cc.append(a)         // error: [Int] is not known equal the result type of makeMeACollection
+cc.append(intArray)         // error: [Int] is not known to equal the result type of makeMeACollection
 ```
 
 However, as with generic type parameters, one can inspect an opaque type's underlying type at runtime. For example, a conditional cast could determine whether the result of `makeMeACollection` is of a particular type:
