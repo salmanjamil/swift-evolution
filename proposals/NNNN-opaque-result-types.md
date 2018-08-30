@@ -54,7 +54,7 @@ func makeMeACollection<T>(_: T.Type)
 
 The syntax of the "opaque" type is derived from the discussions of [generalized existentials](https://github.com/austinzheng/swift-evolution/blob/az-existentials/proposals/XXXX-enhanced-existentials.md). Essentially, following the `opaque` keyword is a class, protocol, `AnyObject`, or composition thereof (joined with `&`), optionally followed by a `where` clause indicating other requirements. Within that `where` clause, one can use `_` to refer to the opaque result type itself, so `_.Element` would refer to the `Element` associated type of the `opaque` type (which otherwise cannot be named).
 
-A caller to `makeMeACollection(_:)` can rely on the result type having all of the requirements listed. For example:
+A caller to `makeMeACollection(_:)` can rely on the result type satisfying all of the requirements listed. For example:
 
 ```swift
 var c = makeMeACollection(Int.self)
@@ -75,6 +75,7 @@ var c2 = makeMeACollection(Int.self)
 cc.append(c2)        // okay: Element == the result type of makeMeACollection
 ```
 
+### Type identity
 An opaque result type is not considered equivalent to its underlying type by the static type system:
 
 ```swift
@@ -155,7 +156,9 @@ func f7(_ i: Int) -> opaque P {
 
 Of course, there must be at least one `return` statement that provides a concrete type!
 
-Opaque result types can be used with properties. For example:
+### Properties and subscripts
+
+Opaque result types can be used with properties and subscripts. For example, the `lazy` property of a collection could have an opaque result type:
 
 ```swift
 extension Collection {
@@ -166,7 +169,53 @@ extension Collection {
 For computed properties, the concrete type is determined by the `return` statements in the getter. Opaque result types can also be used in stored properties that have an initializer, in which case the concrete type is the type of the initializer:
 
 ```swift
-var strings: opaque Collection where _.Element == String = ["hello", "world"]
+let strings: opaque Collection where _.Element == String = ["hello", "world"]
+```
+
+Properties and subscripts of opaque result type can be mutable. For example:
+
+```swift
+// Module A
+public protocol P {
+  mutating func flip()
+}
+
+private struct Witness: P {
+  mutating func flip() { ... }
+}
+
+public var someP: opaque P = Witness()
+
+// Module B
+import A
+someP.flip()  // okay: flip is a mutating function called on a variable
+```
+
+With a subscript or a computed property, the type of the value provided to the setting (e.g., `newValue`) is determined by the `return` statements in the getter, so the type is consistent and known only to the implementation of the property or subscript. For example:
+
+```swift
+protocol P { }
+private struct Impl: P { }
+
+public struct Vendor {
+  private var storage: [Impl] = [...]
+
+  public var count: Int {
+    return storage.count
+  }
+
+  public subscript(index: Int) -> opaque P {
+    get {
+      return storage[index]
+    }
+    set (newValue) {
+      storage[index] = newValue
+    }
+  }
+}
+
+var vendor = Vendor()
+vendor[0] = vendor[2] // okay: can move elements around
 ```
 
 ### "Naming" the opaque result type
@@ -254,7 +303,7 @@ hArray.sort()   // okay! the Element type is Comparable, and all types are the s
 
 Existentials do not allow such an operation, even with [generalized existentials](https://github.com/austinzheng/swift-evolution/blob/az-existentials/proposals/XXXX-enhanced-existentials.md), because two values of the same existential type may have different types at runtime.
 
-### Interaction with conditional conformances
+### Interaction with conditional conformance
 
 When a generic function returns an adapter type, it's not uncommon for the adapter to use [conditional conformances](https://github.com/apple/swift-evolution/blob/master/proposals/0143-conditional-conformances.md) to reflect the capabilities of its underlying type parameters. For example, consider the `reversed()` operation:
 
