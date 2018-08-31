@@ -1,6 +1,6 @@
 # Opaque Result Types for Public Interfaces
 
-* Proposal: [SE-NNNN](NNNN-hidden-result-types.md)
+* Proposal: [SE-NNNN](NNNN-opaque-result-types.md)
 * Author: [Doug Gregor](https://github.com/DougGregor)
 * Review Manager: TBD
 * Status: **Awaiting review**
@@ -520,15 +520,19 @@ However, when the body of the function is known to the client (e.g., due to inli
 
 ## Source compatibility
 
-Opaque result types are purely additive. If they were to be adopted in the standard library, that change could affect source compatibility.
+Opaque result types are purely additive. They can be used as a tool to improve long-term source (and binary) stability, by not exposing the details of a result type to clients.
+
+If opaque result types were to be adopted in the standard library, it would initially break source compatibility (e.g., if types like `EnumeratedSequence`, `FlattenSequence`, and `JoinedSequence` were removed from the public API) but could provide longer-term benefits for both source and ABI stability because fewer details would be exposed to clients. There are some mitigations for source compatibility, e.g., a longer deprecation cycle for the types or overloading the old signature (that returns the named types) with the new signature (that returns an opaque result type).
 
 ## Effect on ABI stability
 
-Opaque result types are an ABI-additive feature. If they were to be adopted in the standard library, it would affect the standard library ABI. This feature can be useful for ABI stability, because it would allow the standard library to hide a large number of detail types (`EnumeratedSequence`, `FlattenSequence`, `JoinedSequence`, and so on) from both source code and binaries, allowing more customization in the future.
+Opaque result types are an ABI-additive feature, requiring no additional support from the Swift runtime. Changing any of the APIs in the standard library to make use of opaque result types would be an ABI-breaking change, however, so the standard library would have to carefully stage such changes.
 
 ## Effect on API resilience
 
-Opaque result types are part of the result type of a function/type of a variable/element type of a subscript, which cannot be changed without affecting API resilience.
+Opaque result types are part of the result type of a function/type of a variable/element type of a subscript. The requirements that describe the opaque result type cannot change without breaking the API/ABI. However, the underlying concrete type *can* change from one version to the next without breaking ABI, because that type is not known to clients of the API.
+
+One notable exception to the above rule is `@inlinable`: an `@inlinable` declaration with an opaque result type requires that the underlying concrete type be `public` or `@usableFromInline`. Moreover, the underlying concrete type *cannot be changed* without breaking backward compatibility, because it's identity has been exposed by inlining the body of the function. That makes opaque result types somewhat less compelling for the `compactMap` example presented in the introduction, because one cannot have `compactMap` be marked `@inlinable` with an opaque result type, and then later change the underlying concrete type to something more efficient.
 
 We could allow an API originally specified using an opaque result type to later evolve to specify the specific result type. The result type itself would have to become visible to clients, and this might affect source compatibility, but (mangled name aside) such a change would be resilient.
 
@@ -541,9 +545,3 @@ The proposed Swift feature is largely based on Rust's `impl Trait` language feat
 * Due to associated type inference, Swift already has a way to "name" an opaque result type in some cases.
 * We're not even going to mention the use of `opaque` in argument position, because it's a distraction for the purposes of this proposal; see [Rust RFC 1951](https://github.com/rust-lang/rfcs/blob/master/text/1951-expand-impl-trait.md).
 * Rust [didn't tackle the issue of conditional constraints](https://github.com/rust-lang/rfcs/blob/master/text/1522-conservative-impl-trait.md#compatibility-with-conditional-trait-bounds).
-
-
-## Alternatives considered
-
-Let implementation details continue to leak out of generic libraries.
-
