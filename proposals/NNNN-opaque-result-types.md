@@ -420,7 +420,16 @@ protocol Q {
 
 Associated types provide a better way to model the same problem, and the requirements can then be satisfied by a function that produces an opaque result type.
 
-Contextual named types (e.g., `.Element`) can only be used within the `where` clause of an opaque result type. [Generalized existentials](https://github.com/austinzheng/swift-evolution/blob/az-existentials/proposals/XXXX-enhanced-existentials.md) are likely to expand the usefulness of this syntax.
+Similarly to the restriction on protocols, opaque result types cannot be used for a non-`final` declaration within a class:
+
+```swift
+class C {
+  func f() -> opaque P { ... }         // error: cannot use opaque result type with a non-final method
+  final func g() -> opaque P { ... }  // okay
+}
+```
+
+Contextual named types (e.g., `_.Element`) can only be used within the `where` clause of an opaque result type. [Generalized existentials](https://github.com/austinzheng/swift-evolution/blob/az-existentials/proposals/XXXX-enhanced-existentials.md) are likely to expand the usefulness of this syntax.
 
 ### Single opaque result type per entity
 As a (possibly temporary) restriction, a particular function/variable/subscript can only contain a single opaque result type, so the following is ill-formed:
