@@ -424,7 +424,7 @@ The conditional requirements is a set of `where` clauses, each followed by a `re
 
 ### Restrictions on opaque result types
 
-Opaque result types can only be used within the result type of a function, the type of a variable, or the element type of a subscript. However, they can occur within some part of the structure of that type. For example, one can return an optional opaque result type:
+Opaque result types can only be used within the result type of a non-local function, the type of a variable, or the element type of a subscript. However, they can occur within some part of the structure of that type. For example, one can return an optional opaque result type:
 
 ```swift
 func f(flip: Bool) -> (opaque P)? {
