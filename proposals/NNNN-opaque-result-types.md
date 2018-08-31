@@ -9,26 +9,52 @@
 ## Introduction
 
 This proposal introduces the ability to "hide" the result types of specific functions from the caller in public interfaces. Instead of providing a specific concrete type, such functions will return an unknown-but-unique type described only by its capabilities, e.g., a `Collection` with a specific `Element` type. 
-For example, [SE-0222](https://github.com/apple/swift-evolution/blob/master/proposals/0222-lazy-compactmap-sequence.md) introduces a new standard library type `LazyCompactMapCollection` for the sole purpose of describing the result type of `compactMap(_:)`:
+For example, [SE-0222](https://github.com/apple/swift-evolution/blob/master/proposals/0222-lazy-compactmap-sequence.md) introduces a new standard library type `LazyCompactMapCollection` for the sole purpose of describing the result type of `compactMap(_:)`.
+
+Prior to this proposal, the lazy `compactMap(_:)` has a fairly complicated signature:
 
 ```swift
 extension LazyMapCollection {
-  public func compactMap<U>(_ transform: @escaping (Element) -> U?)
-      -> LazyCompactMapCollection<Base, U> {
-    return LazyCompactMapCollection<Base, U>(/*...*/)
+  public func compactMap<ElementOfResult>(
+                _ transform: @escaping (Elements.Element) -> ElementOfResult?
+              )
+      -> LazyMapSequence<
+           LazyFilterSequence<
+             LazyMapSequence<Elements, ElementOfResult?>
+           >,
+           ElementOfResult
+         > {
+    return self.map(transform).filter { $0 != nil }.map { $0! }
   }
 }
 ```
 
-With this proposal, the standard library could hide the result type, exposing it as "an opaque `Colection` whose `Element` type is `U`:
+The result type of `compactMap(_:)` is a deeply-nested set of generic types that effectively expose the implementation of the lazy adapter. It is both horrible to write and horrible to reason about. SE-0222 proposes the introduction of a new type `LazyCompactMapCollection` to describe the result type of `compactMap`:
+
+```swift
+extension LazyMapCollection {
+  public func compactMap<ElementOfResult>(
+                _ transform: @escaping (Element) -> ElementOfResult?
+              )
+      -> LazyCompactMapCollection<Base, ElementOfResult> {
+    return LazyCompactMapCollection<Base, ElementOfResult>(/*...*/)
+  }
+}
+```
+
+This is less verbose, but requires the introduction of a new, public type solely to describe the result of this function, increasing the surface area of the library.
+
+Opaque result types allow the function to state the capabilities of its result type without tying it down to a concrete type. For example, `compactMap(_:)` would state that its result type is "an opaque `Collection` whose `Element` type is `ElementOfResult `:
 
 ```swift
 private struct LazyCompactMapCollection<Base: Collection, Element> { ... }
 
 extension LazyMapCollection {
-  public func compactMap<U>(_ transform: @escaping (Element) -> U?)
-      -> opaque Collection where _.Element == U {
-    return LazyCompactMapCollection<Base, U>(/*...*/)
+  public func compactMap<ElementOfResult>(
+                _ transform: @escaping (Element) -> ElementOfResult?
+              )
+      -> opaque Collection where _.Element == ElementOfResult {
+    return LazyCompactMapCollection<Base, ElementOfResult>(/*...*/)
   }
 }
 ```
