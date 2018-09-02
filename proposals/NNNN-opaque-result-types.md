@@ -424,7 +424,7 @@ The conditional requirements is a set of `where` clauses, each followed by a `re
 
 ### Restrictions on opaque result types
 
-Opaque result types can only be used within the result type of a non-local function, the type of a variable, or the element type of a subscript. However, they can occur within some part of the structure of that type. For example, one can return an optional opaque result type:
+Opaque result types can only be used within the result type of a non-local function, the type of a variable, or the result type of a subscript. For example, one can return an optional opaque result type:
 
 ```swift
 func f(flip: Bool) -> (opaque P)? {
@@ -455,7 +455,7 @@ class C {
 }
 ```
 
-Contextual named types (e.g., `_.Element`) can only be used within the `where` clause of an opaque result type. [Generalized existentials](https://github.com/austinzheng/swift-evolution/blob/az-existentials/proposals/XXXX-enhanced-existentials.md) are likely to expand the usefulness of this syntax.
+Contextual named types (e.g., `_.Element`) can only be used within the `where` clause of an opaque result type; elsewhere, the `_` has no meaning for a type. [Generalized existentials](https://github.com/austinzheng/swift-evolution/blob/az-existentials/proposals/XXXX-enhanced-existentials.md) are likely to expand on this syntax.
 
 ### Single opaque result type per entity
 As a (possibly temporary) restriction, a particular function/variable/subscript can only contain a single opaque result type, so the following is ill-formed:
