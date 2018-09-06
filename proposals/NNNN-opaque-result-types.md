@@ -295,6 +295,79 @@ let sv: S.SomeType     // okay: names the opaque result type of S.someValue()
 sv = S().someValue()   // okay: returns the same opaque result type
 ```
 
+Note that having a name for the opaque result type still doesn't give information about the underlying concrete type. For example, the only way to create an instance of the type `S.SomeType` is by calling `S.someValue()`.
+
+### Opaque type aliases
+
+Opaque result types are tied to a specific declaration. They offer no way to state that two related APIs with opaque result types produce the *same* underlying concrete type. For example, the `LazyCompactMapCollection` type proposed in [SE-0222](https://github.com/apple/swift-evolution/blob/master/proposals/0222-lazy-compactmap-sequence.md) is used to describe four different-but-related APIs: lazy `compactMap`, `filter`, and `map` on various types.
+
+Opaque type aliases allow us to provide a named type with stated capabilities, for which the underlying implementation type is hidden from clients. For example:
+
+```swift
+public typealias LazyCompactMapCollection<Elements, ElementOfResult>:
+  opaque Collection where _.Element == ElementOfResult
+    = LazyMapSequence<
+           LazyFilterSequence<
+             LazyMapSequence<Elements, ElementOfResult?>
+           >,
+           ElementOfResult
+         >
+```
+
+The opaque result type following the `:` is how clients see `LazyCompactMapCollection`. The underlying concrete type, spelled after the `=`, is visible only to the implementation (see below for more details).
+
+Now, multiple APIs can be describing as returning a `LazyCompactMapCollection`:
+
+```swift
+extension LazyMapCollection {
+	public func compactMap<U>(_ transform: @escaping (Element) -> U?) -> LazyCompactMapCollection<Base, U> {
+	  // ...
+	}
+
+	public func filter(_ isIncluded: @escaping (Element) -> Bool) -> LazyCompactMapCollection<Base, Element> {
+	  // ...
+	}
+}
+```
+
+From the client perspective, both APIs return the same type, but the specific underlying type is not known.
+
+```swift
+var compactMapOp = values.lazy.map(f).compactMap(g)
+if Bool.random() {
+  compactMapOp = values.lazy.map(f).filter(h)  // okay: both APIs have the same type
+}
+```
+
+The underlying concrete type of an opaque type alias has restricted visibility. It's access is the more-restrictive of the access level below the type alias's access (e.g., `internal` for a `public` opaque type alias, `private` for an `internal` opaque type alias) and the access levels of any type mentioned in the underlying concrete. For the opaque type alias `LazyCompactMapCollection` above, this is the most restrictive of `internal` (one level below `public`) and the types involved in the underlying type (`LazyMapSequence`, `LazyFilterSequence`), all of which are public. Therefore, the access of the underlying concrete type is `internal`.
+
+If instead the concrete underlying type of `LazyCompactMapCollection` involved a private type, e.g.,
+
+```swift
+private struct LazyCompactMapCollectionImpl<Elements: Collection, ElementOfResult> {
+  // ...
+}
+
+public typealias LazyCompactMapCollection<Elements, ElementOfResult>:
+  opaque Collection where _.Element == ElementOfResult
+    = LazyCompactMapCollectionImpl<Elements, ElementOfResult>
+```
+
+then the access of the underlying concrete type would be `private`.
+
+The access of the underlying concrete type only affects the type checking of function bodies. If the function body has access to the underlying concrete type, then the opaque typealias and its underlying concrete type are considered to be equivalent. Extending the example above:
+
+```swift
+extension LazyMapCollection {
+	public func compactMap<U>(_ transform: @escaping (Element) -> U?) -> LazyCompactMapCollection<Base, U> {
+      // okay so long as we are in the same file as the opaque type alias LazyCompactMapCollection,
+      // because LazyCompactMapCollectionImpl<Base, U> and
+      // LazyCompactMapCollection<Base, U> are known to be identical
+	  return LazyCompactMapCollectionImpl<Base, U>(elements, transform)
+	}
+}
+```
+
 ### Opaque result types vs. existentials
 On the surface, opaque types are quite similar to existential types: in each case, the specific concrete type is unknown to the static type system, and can be manipulated only through the stated capabilities (e.g., protocol and superclass constraints). For example:
 
