@@ -8,10 +8,15 @@
 
 ## Introduction
 
-This proposal introduces the ability to "hide" the result types of specific functions from the caller in public interfaces. Instead of providing a specific concrete type, such functions will return an unknown-but-unique type described only by its capabilities, e.g., a `Collection` with a specific `Element` type. 
-For example, [SE-0222](https://github.com/apple/swift-evolution/blob/master/proposals/0222-lazy-compactmap-sequence.md) introduces a new standard library type `LazyCompactMapCollection` for the sole purpose of describing the result type of `compactMap(_:)`.
+This proposal introduces the ability to "hide" the specific result type of a function from its callers. The result type is described only by its capabilities, e.g., a `Collection` with a specific `Element` type. Clients can use the resulting values freely, but the underlying concrete type is known only to the implementation of the function and need not be spelled out explicitly.
 
-Prior to this proposal, the lazy `compactMap(_:)` has a fairly complicated signature:
+Consider an operation like the following:
+
+```swift
+let resultValues = values.lazy.map(transform).filter { $0 != nil }.map { $0! }
+```
+
+If we want to encapsulate that code in another method, we're going to have to write out the type of that lazy-map-filter chain, which is rather ugly:
 
 ```swift
 extension LazyMapCollection {
@@ -29,7 +34,8 @@ extension LazyMapCollection {
 }
 ```
 
-The result type of `compactMap(_:)` is a deeply-nested set of generic types that effectively expose the implementation of the lazy adapter. It is both horrible to write and horrible to reason about. SE-0222 proposes the introduction of a new type `LazyCompactMapCollection` to describe the result type of `compactMap`:
+The author of `compactMap(_:)` doesn't want to have to figure out that type,
+and the clients of `compactMap(_:)` don't want to have to reason about it. `compactMap(_:)` is the subject of [SE-0222](https://github.com/apple/swift-evolution/blob/master/proposals/0222-lazy-compactmap-sequence.md), which introduces a new standard library type `LazyCompactMapCollection` for the sole purpose of describing the result type of `compactMap(_:)`:
 
 ```swift
 extension LazyMapCollection {
@@ -42,9 +48,22 @@ extension LazyMapCollection {
 }
 ```
 
-This is less verbose, but requires the introduction of a new, public type solely to describe the result of this function, increasing the surface area of the library.
+This is less verbose, but requires the introduction of a new, public type solely to describe the result of this function, increasing the surface area of the standard library and requiring a nontrivial amount of implementation.
 
-Opaque result types allow the function to state the capabilities of its result type without tying it down to a concrete type. For example, `compactMap(_:)` would state that its result type is "an opaque `Collection` whose `Element` type is `ElementOfResult `:
+Opaque result types allow the function to state the capabilities of its result type without tying it down to a concrete type. For example, `compactMap(_:)` would state that its result type is "an opaque `Collection` whose `Element` type is `ElementOfResult `. The implementation could return the original method chain:
+
+```swift
+extension LazyMapCollection {
+  public func compactMap<ElementOfResult>(
+                _ transform: @escaping (Element) -> ElementOfResult?
+              )
+      -> opaque Collection where _.Element == ElementOfResult {
+    return self.map(transform).filter { $0 != nil }.map { $0! }
+  }
+}
+```
+
+or a custom *potentially `private`* type:
 
 ```swift
 private struct LazyCompactMapCollection<Base: Collection, Element> { ... }
@@ -59,7 +78,7 @@ extension LazyMapCollection {
 }
 ```
 
-The implementation of `compactMap(_:)` can still return an instance of `LazyCompactMapCollection`, but now `LazyCompactMapCollection` can be private: its identity is hidden from clients, and could change from one version of the library to the next without breaking those clients, because the actual type identity was never exposed. This allows us to provide potentially-more-efficient implementations without expanding the surface area of the library.
+Either wait, clients only know that they are getting a `Collection` whose `Element` type is `ElementOfResult`. The underlying concrete type is hidden, and can even change from one version of the library to the next without breaking those clients, because the actual type identity was never exposed. This allows us to provide potentially-more-efficient implementations without expanding the surface area of the library.
 
 Swift-evolution thread: [Opaque result types](https://forums.swift.org/t/opaque-result-types/15645)
 
