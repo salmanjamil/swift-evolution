@@ -470,32 +470,21 @@ extension RandomAccessCollection {
 
 However, doing so is messy, and the client would have no way to know that the type returned by the two `reversed()` functions are, in fact, the same.
 
-Alternatively, we can introduce syntax to describe the conditional conformances of an opaque result type. For example, we could state that the result of `reversed()` is *also* a `RandomAccessCollection` when `Self` is a `RandomAccessCollection`. One possible syntax:
+Opaque type aliases can solve this problem. We can change `reversed()` to return an opaque type alias `Reversed`, giving us a name for the resulting type:
 
 ```swift
-extension BidirectionalCollection {
-  public func reversed() -> opaque BidirectionalCollection
-      where _.Element == Element
-      where Self: RandomAccessCollection -> _: RandomAccessCollection {      
-    return ReversedCollection<Self>(...)
-  }
-}
+public typealias Reversed<Base: BidirectionalCollection>:
+  opaque BidirectionalCollection where _.Element == Base.Element
+    = ReversedCollection<Base>
 ```
 
-Here, we add a second where claus that states the conditional requirements (`Self: RandomAccessCollection`) and the consequence of that conditional requirement (`_`, the opaque result type, conforms to `RandomAccessCollection`). One could have multiple conditional clauses, e.g.,
+Then, we can describe conditional conformances on `Reversed`:
 
 ```swift
-extension BidirectionalCollection {
-  public func reversed() -> opaque BidirectionalCollection
-      where _.Element == Element
-      where Self: RandomAccessCollection -> _: RandomAccessCollection
-      where Self: MutableCollection -> _: MutableCollection {
-    return ReversedCollection<Self>(...)
-  }
-}
+extension Reversed: RandomAccessCollection where Element == Base.Element { }
 ```
 
-Here, the opaque result type conforms to `MutableCollection` when the `Self` type conforms to `MutableCollection`. This conditional result is independent of whether the opaque result type conforms to `RandomAccessCollection`.
+The conditional conformance must be satisfied by the underlying concrete type (here, `ReversedCollection`), and the extension must be empty: `Reversed` is the same as `ReversedCollection` at runtime, so one cannot add any API to `Reversed` beyond what `ReversedCollection` supports.
 
 ## Detailed design
 
@@ -672,3 +661,35 @@ The proposed Swift feature is largely based on Rust's `impl Trait` language feat
 * Due to associated type inference, Swift already has a way to "name" an opaque result type in some cases.
 * We're not even going to mention the use of `opaque` in argument position, because it's a distraction for the purposes of this proposal; see [Rust RFC 1951](https://github.com/rust-lang/rfcs/blob/master/text/1951-expand-impl-trait.md).
 * Rust [didn't tackle the issue of conditional constraints](https://github.com/rust-lang/rfcs/blob/master/text/1522-conservative-impl-trait.md#compatibility-with-conditional-trait-bounds).
+
+
+## Alternatives Considered
+
+### Conditional conformances for opaque result types
+
+Conditional conformances are only permitted on opaque type aliases, where we have the `extension` syntax to describe then. We could additionally (or instead) introduce syntax to describe the conditional conformances of an opaque result type directly. For example, we could state that the result of `reversed()` is *also* a `RandomAccessCollection` when `Self` is a `RandomAccessCollection`. One possible syntax:
+
+```swift
+extension BidirectionalCollection {
+  public func reversed() -> opaque BidirectionalCollection
+      where _.Element == Element
+      where Self: RandomAccessCollection -> _: RandomAccessCollection {      
+    return ReversedCollection<Self>(...)
+  }
+}
+```
+
+Here, we add a second where clause that states the conditional requirements (`Self: RandomAccessCollection`) and the consequence of that conditional requirement (`_`, the opaque result type, conforms to `RandomAccessCollection`). One could have multiple conditional clauses, e.g.,
+
+```swift
+extension BidirectionalCollection {
+  public func reversed() -> opaque BidirectionalCollection
+      where _.Element == Element
+      where Self: RandomAccessCollection -> _: RandomAccessCollection
+      where Self: MutableCollection -> _: MutableCollection {
+    return ReversedCollection<Self>(...)
+  }
+}
+```
+
+Here, the opaque result type conforms to `MutableCollection` when the `Self` type conforms to `MutableCollection`. This conditional result is independent of whether the opaque result type conforms to `RandomAccessCollection`.
