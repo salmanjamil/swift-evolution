@@ -82,10 +82,6 @@ Either wait, clients only know that they are getting a `Collection` whose `Eleme
 
 Swift-evolution thread: [Opaque result types](https://forums.swift.org/t/opaque-result-types/15645)
 
-## Motivation
-
-Libraries in Swift often end up having to expose a number of generic types in their public interface to describe the result of generic operations. `LazyCompactMapCollection `, noted in the introduction, would be one such type in the standard library, along with existing types like `EnumeratedSequence`, `FlattenSequence`, `JoinedSequence`, and many others (including several `Lazy` variants). These generic types, which are needed to express the results of generic algorithms (`enumerated`, `flatten`, `joined`), are generally not of interest to users, but can significantly increase the surface area of the library.
-
 ## Proposed solution
 
 This proposal introduces an `opaque` type that can be used to describe an opaque result type for a function. `opaque` types can only be used in the result type of a function, the type of a property, or the element type of a subscript declaration. An `opaque` type is backed by a specific concrete type, but that type is only known to the implementation of that function/property/subscript. Everywhere else, the type is opaque, and is described by its characteristics and originating function/property/subscript. For example:
