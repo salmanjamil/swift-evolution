@@ -6,6 +6,31 @@
 * Status: **Awaiting review**
 * Pull Request: [apple/swift#NNNNN](https://github.com/apple/swift/pull/NNNNN)
 
+
+## Table of Contents
+* [Introduction](#introduction)
+* [Proposed solution](#proposed-solution)
+  + [Opaque result types vs. existentials](#opaque-result-types-vs-existentials)
+  + [Type identity](#type-identity)
+  + [Implementing a function returning an opaque type](#implementing-a-function-returning-an-opaque-type)
+  + [Properties and subscripts](#properties-and-subscripts)
+  + ["Naming" the opaque result type](#-naming--the-opaque-result-type)
+  + [Conditional conformance](#conditional-conformance)
+* [Detailed design](#detailed-design)
+  + [Grammar of opaque result types](#grammar-of-opaque-result-types)
+  + [Restrictions on opaque result types](#restrictions-on-opaque-result-types)
+  + [Single opaque result type per entity](#single-opaque-result-type-per-entity)
+  + [Uniqueness of opaque result types](#uniqueness-of-opaque-result-types)
+  + [Ambiguity with `where` clauses](#ambiguity-with--where--clauses)
+  + [Implementation strategy](#implementation-strategy)
+* [Source compatibility](#source-compatibility)
+* [Effect on ABI stability](#effect-on-abi-stability)
+* [Effect on API resilience](#effect-on-api-resilience)
+* [Rust's `impl Trait`](#rust-s--impl-trait-)
+* [Future Directions](#future-directions)
+  + [Opaque type aliases](#opaque-type-aliases)
+
+
 ## Introduction
 
 This proposal introduces the ability to "hide" the specific result type of a function from its callers. The result type is described only by its capabilities, e.g., a `Collection` with a specific `Element` type. Clients can use the resulting values freely, but the underlying concrete type is known only to the implementation of the function and need not be spelled out explicitly.
