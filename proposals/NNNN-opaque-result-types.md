@@ -104,10 +104,10 @@ c[c.startIndex] = 42 // okay: it's a MutableCollection with Element == Int
 print(c.reversed())  // okay: all Collection/Sequence operations are available
 
 func foo<C: Collection>(_ : C) { }
-foo(c)               // okay: unlike existentials, opaque types work with generics
+foo(c)               // okay: C inferered to opaque result type of makeMeACollection()
 ```
 
-Moreover, these types can be used freely with other generics, e.g., forming a collection of the results:
+Moreover, opaque result types to be used freely with other generics, e.g., forming a collection of the results:
 
 ```swift
 var cc = makeMeACollection(type(of: c))
@@ -115,6 +115,133 @@ cc.append(c)         // okay: Element == the result type of makeMeACollection
 var c2 = makeMeACollection(Int.self)
 cc.append(c2)        // okay: Element == the result type of makeMeACollection
 ```
+
+### Opaque result types vs. existentials
+On the surface, opaque result types are quite similar to (generalized) existential types: in each case, the specific concrete type is unknown to the static type system, and can be manipulated only through the stated capabilities (e.g., protocol and superclass constraints). There are some similarities between the two features for code where the identity of the return type does not matter. For example:
+
+```swift
+protocol P
+  func foo()
+}
+
+func existentialP() -> P { /* ... */ }
+func opaqueP() -> opaque P { /* ... */ }
+
+existentialP().foo()   // okay
+opaqueP().foo()   // okay
+```
+
+However, the fundamental difference between opaque result types and existentials revolves around type identity. All instances of an opaque result type are guaranteed to have the same type at run time, whereas different instances of an existential type may have different types at run time. It is this aspect of existential types that makes their use so limited in Swift. For example, consider a function that takes two values of (existential) type `Equatable` and tries to compare them:
+
+```swift
+protocol Equatable {
+  static func ==(lhs: Self, rhs: Self) -> Bool
+}
+
+func isEqual(_ x: Equatable, y: Equatable) -> Bool {
+  return x == y
+}
+```
+
+The `==` operator is meant to take two values of the same type and compare them. It's clear how that could work for a call like `isEqual(1, 2)`, because both `x` and `y` store values of type `Int`.
+
+But what about a call `isEqual(1, "one")`? Both `Int` and `String` are `Equatable`, so the call to `isEqual` should be well-formed. However, how would the evaluation of `==` work? There is no operator `==` that works with an `Int` on the left and a `String` on the right, so it would fail at run-time with a type mismatch.
+
+Swift rejects the example with the following diagnostic:
+
+```
+error: protocol 'Equatable' can only be used as a generic constraint because it has Self or associated type requirements
+```
+
+The generalized existentials proposal dedicates quite a bit of its design space to [ways to check whether two instances of existential type contain the same type at runtime](https://github.com/austinzheng/swift-evolution/blob/az-existentials/proposals/XXXX-enhanced-existentials.md#real-types-to-existentials-associated-types) to cope with this aspect of existential types. Generalized existentials can make it *possible* to cope with values of `Equatable` type, but it can't make it easy. The following is a correct implementation of `isEqual` using generalized existentials:
+
+```swift
+func isEqual(_ x: Equatable, y: Equatable) -> Bool {
+  if let yAsX = y as? x.Self {
+    return x == yAsX
+  }
+  
+  if let xAsY = x as? y.Self {
+    return xAsY == y
+  }
+  
+  return false
+}
+```
+
+Note that the user must explicitly cope with the potential for run-time type mismatches, because the Swift language will not implicitly defer type checking to run time.
+
+Existentials also interact poorly with generics, because a value of existential type does not conform to its own protocol. For example:
+
+```swift
+protocol P { }
+
+func acceptP<T: P>(_: T) { }
+func provideP(_ p: P) {
+  acceptP(p) //  error: protocol type 'P' cannot conform to 'P' because only 
+             // concrete types can conform to protocols
+}
+```
+
+[Hamish](https://stackoverflow.com/users/2976878/hamish) provides a [complete explanation on StackOverflow](https://stackoverflow.com/questions/33112559/protocol-doesnt-conform-to-itself) as to why an existential of type `P` does not conform to the protocol `P`. The following example from that answer demonstrates the point with an initializer requirement:
+
+```swift
+protocol P {
+  init()
+}
+
+struct S: P {}
+struct S1: P {}
+
+extension Array where Element: P {
+  mutating func appendNew() {
+    // If Element is P, we cannot possibly construct a new instance of it, as you cannot
+    // construct an instance of a protocol.
+    append(Element())
+  }
+}
+
+var arr: [P] = [S(), S1()]
+
+// error: Using 'P' as a concrete type conforming to protocol 'P' is not supported
+arr.appendNew()
+```
+
+Hamish notes that:
+
+> We cannot possibly call `appendNew()` on a `[P]`, because `P` (the `Element`) is not a concrete type and therefore cannot be instantiated. It must be called on an array with concrete-typed elements, where that type conforms to `P`.
+
+The major limitations that Swift places on existentials are, fundamentally, because different instances of existential type may have different types at run time. Generalized existentials can lift some restrictions (e.g., they can allow values of type `Equatable` or `Collection` to exist), but they cannot make the potential for run-time type conflicts disappear without weakening the type-safety guarantees provided by the language (e.g., `x == y` for `Equatable` `x` and `y` will still be an error) nor make existentials as powerful as concrete types (existentials still won't conform to their own protocols).
+
+Opaque result types have none of these limitations, because an opaque result type is a name for a fixed-but-hidden concrete type. If a function returns an `opaque Equatable` result type, one can compare the results of successive calls to the function with `==`:
+
+```swift
+func getEquatable() -> opaque Equatable {
+  return Int.random(in: 0..<10)
+}
+
+let x = getEquatable()
+let y = getEquatable()
+if x == y {           // okay: calls to getEquatable() always return values of the same type
+  print("Bingo!")
+}
+```
+
+Opaque result types *do* conform to the protocols they name, because opaque result types are another name for a concrete type that is guaranteed to conform to those protocols. For example:
+
+```swift
+func isEqualGeneric<T: Equatable>(_ lhs: T, _ rhs: T) -> Bool {
+  return lhs == rhs
+}
+
+let x = getEquatable()
+let y = getEquatable()
+if isEqual(x, y) {           // okay: the opaque result of getEquatable() conforms to Equatable
+  print("Bingo!")
+}
+```
+
+(Generalized) existentials are well-suited for use in heterogeneous collections, or other places where one expects the run-time types of values to vary and there is little need to compare two different values of existential type. However, they don't fit the use cases outlined for opaque result types, which require the types that result from calls to compose well with generics and provide the same capabilities as a concrete type.
 
 ### Type identity
 An opaque result type is not considered equivalent to its underlying type by the static type system:
@@ -292,59 +419,6 @@ sv = S().someValue()   // okay: returns the same opaque result type
 ```
 
 Note that having a name for the opaque result type still doesn't give information about the underlying concrete type. For example, the only way to create an instance of the type `S.SomeType` is by calling `S.someValue()`.
-
-### Opaque result types vs. existentials
-On the surface, opaque types are quite similar to existential types: in each case, the specific concrete type is unknown to the static type system, and can be manipulated only through the stated capabilities (e.g., protocol and superclass constraints). For example:
-
-```swift
-protocol P
-  func foo()
-}
-
-func f() -> P { /* ... */ }
-func g() -> opaque P { /* ... */ }
-
-f().foo()   // okay
-g().foo()   // okay
-
-let pf: P = f()   // okay
-let pg: P = g()   // okay
-```
-
-The primary difference is that the concrete type behind an opaque type is constant at run-time, while an existential's type can change. For example, assuming both `Int` and `String` conform to `P`, `f()` could return a value of a different concrete type:
-
-```swift
-func f() -> P {
-  if Bool.random() {
-    return 17
-  } else {
-    return "hello, existential"
-  }
-}
-```
-
-This means that, for example, an array populated by calls to `f()` could be heterogeneous:
-
-```swift
-let fArray = [f(), f(), f()]  // contains a mix of String and Int at run-time
-```
-
-With an opaque type, there is a single concrete type:
-
-```swift
-let gArray = [g(), g(), g()]  // homogeneous array of g()'s opaque result type
-```
-
-The guarantee of a single concrete type allows opaque result types to compose much better with generics. For example, an opaque result type can make use of protocols with `Self` requirements and use those values with generic operations like `Collection.sort()`:
-
-```swift
-func h() -> opaque Comparable { return /* ... */ }
-
-var hArray = [h(), h(), h()]
-hArray.sort()   // okay! the Element type is Comparable, and all types are the same
-```
-
-Existentials do not allow such an operation, even with [generalized existentials](https://github.com/austinzheng/swift-evolution/blob/az-existentials/proposals/XXXX-enhanced-existentials.md), because two values of the same existential type may have different types at runtime.
 
 ### Conditional conformance
 
