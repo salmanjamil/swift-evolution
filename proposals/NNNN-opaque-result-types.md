@@ -297,77 +297,6 @@ sv = S().someValue()   // okay: returns the same opaque result type
 
 Note that having a name for the opaque result type still doesn't give information about the underlying concrete type. For example, the only way to create an instance of the type `S.SomeType` is by calling `S.someValue()`.
 
-### Opaque type aliases
-
-Opaque result types are tied to a specific declaration. They offer no way to state that two related APIs with opaque result types produce the *same* underlying concrete type. For example, the `LazyCompactMapCollection` type proposed in [SE-0222](https://github.com/apple/swift-evolution/blob/master/proposals/0222-lazy-compactmap-sequence.md) is used to describe four different-but-related APIs: lazy `compactMap`, `filter`, and `map` on various types.
-
-Opaque type aliases allow us to provide a named type with stated capabilities, for which the underlying implementation type is hidden from clients. For example:
-
-```swift
-public typealias LazyCompactMapCollection<Elements, ElementOfResult>:
-  opaque Collection where _.Element == ElementOfResult
-    = LazyMapSequence<
-           LazyFilterSequence<
-             LazyMapSequence<Elements, ElementOfResult?>
-           >,
-           ElementOfResult
-         >
-```
-
-The opaque result type following the `:` is how clients see `LazyCompactMapCollection`. The underlying concrete type, spelled after the `=`, is visible only to the implementation (see below for more details).
-
-Now, multiple APIs can be describing as returning a `LazyCompactMapCollection`:
-
-```swift
-extension LazyMapCollection {
-	public func compactMap<U>(_ transform: @escaping (Element) -> U?) -> LazyCompactMapCollection<Base, U> {
-	  // ...
-	}
-
-	public func filter(_ isIncluded: @escaping (Element) -> Bool) -> LazyCompactMapCollection<Base, Element> {
-	  // ...
-	}
-}
-```
-
-From the client perspective, both APIs return the same type, but the specific underlying type is not known.
-
-```swift
-var compactMapOp = values.lazy.map(f).compactMap(g)
-if Bool.random() {
-  compactMapOp = values.lazy.map(f).filter(h)  // okay: both APIs have the same type
-}
-```
-
-The underlying concrete type of an opaque type alias has restricted visibility. It's access is the more-restrictive of the access level below the type alias's access (e.g., `internal` for a `public` opaque type alias, `private` for an `internal` opaque type alias) and the access levels of any type mentioned in the underlying concrete. For the opaque type alias `LazyCompactMapCollection` above, this is the most restrictive of `internal` (one level below `public`) and the types involved in the underlying type (`LazyMapSequence`, `LazyFilterSequence`), all of which are public. Therefore, the access of the underlying concrete type is `internal`.
-
-If instead the concrete underlying type of `LazyCompactMapCollection` involved a private type, e.g.,
-
-```swift
-private struct LazyCompactMapCollectionImpl<Elements: Collection, ElementOfResult> {
-  // ...
-}
-
-public typealias LazyCompactMapCollection<Elements, ElementOfResult>:
-  opaque Collection where _.Element == ElementOfResult
-    = LazyCompactMapCollectionImpl<Elements, ElementOfResult>
-```
-
-then the access of the underlying concrete type would be `private`.
-
-The access of the underlying concrete type only affects the type checking of function bodies. If the function body has access to the underlying concrete type, then the opaque typealias and its underlying concrete type are considered to be equivalent. Extending the example above:
-
-```swift
-extension LazyMapCollection {
-	public func compactMap<U>(_ transform: @escaping (Element) -> U?) -> LazyCompactMapCollection<Base, U> {
-      // okay so long as we are in the same file as the opaque type alias LazyCompactMapCollection,
-      // because LazyCompactMapCollectionImpl<Base, U> and
-      // LazyCompactMapCollection<Base, U> are known to be identical
-	  return LazyCompactMapCollectionImpl<Base, U>(elements, transform)
-	}
-}
-```
-
 ### Opaque result types vs. existentials
 On the surface, opaque types are quite similar to existential types: in each case, the specific concrete type is unknown to the static type system, and can be manipulated only through the stated capabilities (e.g., protocol and superclass constraints). For example:
 
@@ -421,7 +350,7 @@ hArray.sort()   // okay! the Element type is Comparable, and all types are the s
 
 Existentials do not allow such an operation, even with [generalized existentials](https://github.com/austinzheng/swift-evolution/blob/az-existentials/proposals/XXXX-enhanced-existentials.md), because two values of the same existential type may have different types at runtime.
 
-### Interaction with conditional conformance
+### Conditional conformance
 
 When a generic function returns an adapter type, it's not uncommon for the adapter to use [conditional conformances](https://github.com/apple/swift-evolution/blob/master/proposals/0143-conditional-conformances.md) to reflect the capabilities of its underlying type parameters. For example, consider the `reversed()` operation:
 
@@ -468,23 +397,32 @@ extension RandomAccessCollection {
 }
 ```
 
-However, doing so is messy, and the client would have no way to know that the type returned by the two `reversed()` functions are, in fact, the same.
-
-Opaque type aliases can solve this problem. We can change `reversed()` to return an opaque type alias `Reversed`, giving us a name for the resulting type:
+However, doing so is messy, and the client would have no way to know that the type returned by the two `reversed()` functions are, in fact, the same. To express the conditional conformance behavior, we extend the syntax of opaque result types to describe additional capabilities of the resulting type that depend on extended requirements. For example, we could state that the result of `reversed()` is *also* a `RandomAccessCollection` when `Self` is a `RandomAccessCollection`. One possible syntax:
 
 ```swift
-public typealias Reversed<Base: BidirectionalCollection>:
-  opaque BidirectionalCollection where _.Element == Base.Element
-    = ReversedCollection<Base>
+extension BidirectionalCollection {
+  public func reversed() 
+      -> opaque BidirectionalCollection where _.Element == Element
+         opaque RandomAccessCollection where Self: RandomAccessCollection {
+    return ReversedCollection<Self>(...)
+  }
+}
 ```
 
-Then, we can describe conditional conformances on `Reversed`:
+Here, we add a second `opaque` clause that states additional information about the opaque result type (it is a `RandomAccessCollection`) as well as the requirements under which that capability is available (the `where Self: RandomAccessCollection`). One could have multiple conditional clauses, e.g.,
 
 ```swift
-extension Reversed: RandomAccessCollection where Element == Base.Element { }
+extension BidirectionalCollection {
+  public func reversed() 
+      -> opaque BidirectionalCollection where _.Element == Element
+         opaque RandomAccessCollection where Self: RandomAccessCollection
+         opaque MutableCollection where Self: MutableCollection {
+    return ReversedCollection<Self>(...)
+  }
+}
 ```
 
-The conditional conformance must be satisfied by the underlying concrete type (here, `ReversedCollection`), and the extension must be empty: `Reversed` is the same as `ReversedCollection` at runtime, so one cannot add any API to `Reversed` beyond what `ReversedCollection` supports.
+Here, the opaque result type conforms to `MutableCollection` when the `Self` type conforms to `MutableCollection`. This conditional result is independent of whether the opaque result type conforms to `RandomAccessCollection`.
 
 ## Detailed design
 
@@ -662,34 +600,91 @@ The proposed Swift feature is largely based on Rust's `impl Trait` language feat
 * We're not even going to mention the use of `opaque` in argument position, because it's a distraction for the purposes of this proposal; see [Rust RFC 1951](https://github.com/rust-lang/rfcs/blob/master/text/1951-expand-impl-trait.md).
 * Rust [didn't tackle the issue of conditional constraints](https://github.com/rust-lang/rfcs/blob/master/text/1522-conservative-impl-trait.md#compatibility-with-conditional-trait-bounds).
 
+## Future Directions
 
-## Alternatives Considered
+### Opaque type aliases
 
-### Conditional conformances for opaque result types
+Opaque result types are tied to a specific declaration. They offer no way to state that two related APIs with opaque result types produce the *same* underlying concrete type. For example, the `LazyCompactMapCollection` type proposed in [SE-0222](https://github.com/apple/swift-evolution/blob/master/proposals/0222-lazy-compactmap-sequence.md) is used to describe four different-but-related APIs: lazy `compactMap`, `filter`, and `map` on various types.
 
-Conditional conformances are only permitted on opaque type aliases, where we have the `extension` syntax to describe then. We could additionally (or instead) introduce syntax to describe the conditional conformances of an opaque result type directly. For example, we could state that the result of `reversed()` is *also* a `RandomAccessCollection` when `Self` is a `RandomAccessCollection`. One possible syntax:
+Opaque type aliases allow us to provide a named type with stated capabilities, for which the underlying implementation type is hidden from clients. For example:
 
 ```swift
-extension BidirectionalCollection {
-  public func reversed() -> opaque BidirectionalCollection
-      where _.Element == Element
-      where Self: RandomAccessCollection -> _: RandomAccessCollection {      
-    return ReversedCollection<Self>(...)
+public typealias LazyCompactMapCollection<Elements, ElementOfResult>:
+  opaque Collection where _.Element == ElementOfResult
+    = LazyMapSequence<
+           LazyFilterSequence<
+             LazyMapSequence<Elements, ElementOfResult?>
+           >,
+           ElementOfResult
+         >
+```
+
+The opaque result type following the `:` is how clients see `LazyCompactMapCollection`. The underlying concrete type, spelled after the `=`, is visible only to the implementation (see below for more details).
+
+Now, multiple APIs can be describing as returning a `LazyCompactMapCollection`:
+
+```swift
+extension LazyMapCollection {
+	public func compactMap<U>(_ transform: @escaping (Element) -> U?) -> LazyCompactMapCollection<Base, U> {
+	  // ...
+	}
+
+	public func filter(_ isIncluded: @escaping (Element) -> Bool) -> LazyCompactMapCollection<Base, Element> {
+	  // ...
+	}
+}
+```
+
+From the client perspective, both APIs return the same type, but the specific underlying type is not known.
+
+```swift
+var compactMapOp = values.lazy.map(f).compactMap(g)
+if Bool.random() {
+  compactMapOp = values.lazy.map(f).filter(h)  // okay: both APIs have the same type
+}
+```
+
+The underlying concrete type of an opaque type alias has restricted visibility. It's access is the more-restrictive of the access level below the type alias's access (e.g., `internal` for a `public` opaque type alias, `private` for an `internal` opaque type alias) and the access levels of any type mentioned in the underlying concrete. For the opaque type alias `LazyCompactMapCollection` above, this is the most restrictive of `internal` (one level below `public`) and the types involved in the underlying type (`LazyMapSequence`, `LazyFilterSequence`), all of which are public. Therefore, the access of the underlying concrete type is `internal`.
+
+If instead the concrete underlying type of `LazyCompactMapCollection` involved a private type, e.g.,
+
+```swift
+private struct LazyCompactMapCollectionImpl<Elements: Collection, ElementOfResult> {
+  // ...
+}
+
+public typealias LazyCompactMapCollection<Elements, ElementOfResult>:
+  opaque Collection where _.Element == ElementOfResult
+    = LazyCompactMapCollectionImpl<Elements, ElementOfResult>
+```
+
+then the access of the underlying concrete type would be `private`.
+
+The access of the underlying concrete type only affects the type checking of function bodies. If the function body has access to the underlying concrete type, then the opaque typealias and its underlying concrete type are considered to be equivalent. Extending the example above:
+
+```swift
+extension LazyMapCollection {
+  public func compactMap<U>(_ transform: @escaping (Element) -> U?) -> LazyCompactMapCollection<Base, U> {
+    // okay so long as we are in the same file as the opaque type alias LazyCompactMapCollection,
+    // because LazyCompactMapCollectionImpl<Base, U> and
+    // LazyCompactMapCollection<Base, U> are known to be identical
+    return LazyCompactMapCollectionImpl<Base, U>(elements, transform)
   }
 }
 ```
 
-Here, we add a second where clause that states the conditional requirements (`Self: RandomAccessCollection`) and the consequence of that conditional requirement (`_`, the opaque result type, conforms to `RandomAccessCollection`). One could have multiple conditional clauses, e.g.,
+Opaque type aliases often an alternative solution to the issue with conditional conformance. Instead of annotating the `opaque` result type with all of the possible conditional conformances, we can change `reversed()` to return an opaque type alias `Reversed`, giving us a name for the resulting type:
 
 ```swift
-extension BidirectionalCollection {
-  public func reversed() -> opaque BidirectionalCollection
-      where _.Element == Element
-      where Self: RandomAccessCollection -> _: RandomAccessCollection
-      where Self: MutableCollection -> _: MutableCollection {
-    return ReversedCollection<Self>(...)
-  }
-}
+public typealias Reversed<Base: BidirectionalCollection>:
+  opaque BidirectionalCollection where _.Element == Base.Element
+    = ReversedCollection<Base>
 ```
 
-Here, the opaque result type conforms to `MutableCollection` when the `Self` type conforms to `MutableCollection`. This conditional result is independent of whether the opaque result type conforms to `RandomAccessCollection`.
+Then, we can describe conditional conformances on `Reversed`:
+
+```swift
+extension Reversed: RandomAccessCollection where Element == Base.Element { }
+```
+
+The conditional conformance must be satisfied by the underlying concrete type (here, `ReversedCollection`), and the extension must be empty: `Reversed` is the same as `ReversedCollection` at runtime, so one cannot add any API to `Reversed` beyond what `ReversedCollection` supports.
