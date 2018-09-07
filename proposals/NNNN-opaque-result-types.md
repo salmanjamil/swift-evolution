@@ -302,7 +302,7 @@ func f1() -> opaque P {
 
 func f2(i: Int) -> opaque P {   // okay: both returns produce Int
   if i > 10 { return i }
-  return 0;
+  return 0
 }
 
 func f2(flip: Bool) -> opaque P {
@@ -338,7 +338,7 @@ Note that recursive calls *are* allowed, and are known to produce a value of the
 func f7(_ i: Int) -> opaque P {
   if i == 0 {
     return f7(1)                 // okay: returning the opaque result type of f(), similar to f5()
-  else if i < 0 {
+  } else if i < 0 {
     let result: Int = f7(-i)     // error: opaque result type of f() is not convertible to Int
     return result
   } else {
@@ -523,18 +523,16 @@ Here, the opaque result type conforms to `MutableCollection` when the `Self` typ
 
 ### Grammar of opaque result types
 
-The grammatical productions for opaque result types aren't straightforward:
+The grammatical productions for opaque result types are straightforward:
 
 ```
-type ::= 'opaque' type where-clause[opt] opaque-conditional-requirement*
+type ::= opaque-type opaque-type*
      |   '_'
      
-opaque-conditional-requirement ::= where-clause '->' requirement-list
+opaque-type ::= 'opaque' type where-clause[opt]
 ```
 
-The first `type` production introduces the `opaque` type with its optional `where` clause and conditional requirements; the second `type` production introduces the contextual type `_` to describe the opaque result type.
-
-The conditional requirements is a set of `where` clauses, each followed by a `requirement-list`.
+The first `type` production allows a sequence of `opaque-type` clauses. Each of those is `opaque` followed by a type (that is semantically restricted to an existential) and an optional `where` clause. The second `type` production introduces the contextual type `_` to describe the opaque result type.
 
 ### Restrictions on opaque result types
 
