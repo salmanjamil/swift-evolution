@@ -103,7 +103,7 @@ extension LazyMapCollection {
 }
 ```
 
-Either wait, clients only know that they are getting a `Collection` whose `Element` type is `ElementOfResult`. The underlying concrete type is hidden, and can even change from one version of the library to the next without breaking those clients, because the actual type identity was never exposed. This allows us to provide potentially-more-efficient implementations without expanding the surface area of the library.
+Either way, clients only know that they are getting a `Collection` whose `Element` type is `ElementOfResult`. The underlying concrete type is hidden, and can even change from one version of the library to the next without breaking those clients, because the actual type identity was never exposed. This allows us to provide potentially-more-efficient implementations without expanding the surface area of the library.
 
 Swift-evolution thread: [Opaque result types](https://forums.swift.org/t/opaque-result-types/15645)
 
